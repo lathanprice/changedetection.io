@@ -59,3 +59,82 @@ def test_mark_all_viewed_button_is_always_in_the_dom(client, live_server, measur
     assert b'class="has-unread-changes' not in res.data
 
     delete_all_watches(client)
+
+
+def _create_watch_with_two_snapshots(client, datastore_path):
+    set_original_response(datastore_path=datastore_path)
+    client.post(
+        url_for("ui.ui_views.form_quick_watch_add"),
+        data={"url": url_for('test_endpoint', _external=True), "tags": ''},
+        follow_redirects=True
+    )
+    wait_for_all_checks(client)
+
+    set_modified_response(datastore_path=datastore_path)
+    client.post(url_for("ui.form_watch_checknow"), follow_redirects=True)
+    wait_for_all_checks(client)
+
+    return next(iter(client.application.config["DATASTORE"].data["watching"]))
+
+
+def test_mark_unviewed_marks_viewed_watch_unviewed(client, live_server, measure_memory_usage, datastore_path):
+    uuid = _create_watch_with_two_snapshots(client, datastore_path)
+    watch = client.application.config["DATASTORE"].data["watching"][uuid]
+
+    client.get(url_for("ui.ui_diff.diff_history_page", uuid=uuid))
+    assert watch.viewed
+
+    res = client.post(
+        url_for("ui.form_watch_list_checkbox_operations"),
+        data={"op": "mark-unviewed", "uuids": [uuid]},
+        follow_redirects=True
+    )
+
+    assert not watch.viewed
+    assert watch.has_unviewed
+    assert b"1 watches marked as unviewed (0 skipped)" in res.data
+    delete_all_watches(client)
+
+
+def test_mark_unviewed_skips_watch_with_one_snapshot(client, live_server, measure_memory_usage, datastore_path):
+    set_original_response(datastore_path=datastore_path)
+    client.post(
+        url_for("ui.ui_views.form_quick_watch_add"),
+        data={"url": url_for('test_endpoint', _external=True), "tags": ''},
+        follow_redirects=True
+    )
+    wait_for_all_checks(client)
+
+    uuid = next(iter(client.application.config["DATASTORE"].data["watching"]))
+    watch = client.application.config["DATASTORE"].data["watching"][uuid]
+    last_viewed = watch["last_viewed"]
+
+    res = client.post(
+        url_for("ui.form_watch_list_checkbox_operations"),
+        data={"op": "mark-unviewed", "uuids": [uuid]},
+        follow_redirects=True
+    )
+
+    assert watch.history_n == 1
+    assert watch["last_viewed"] == last_viewed
+    assert not watch.has_unviewed
+    assert b"0 watches marked as unviewed (1 skipped)" in res.data
+    delete_all_watches(client)
+
+
+def test_viewing_diff_after_mark_unviewed_marks_watch_viewed(client, live_server, measure_memory_usage, datastore_path):
+    uuid = _create_watch_with_two_snapshots(client, datastore_path)
+    watch = client.application.config["DATASTORE"].data["watching"][uuid]
+
+    client.post(
+        url_for("ui.form_watch_list_checkbox_operations"),
+        data={"op": "mark-unviewed", "uuids": [uuid]},
+        follow_redirects=True
+    )
+    assert watch.has_unviewed
+
+    client.get(url_for("ui.ui_diff.diff_history_page", uuid=uuid))
+
+    assert watch.viewed
+    assert not watch.has_unviewed
+    delete_all_watches(client)

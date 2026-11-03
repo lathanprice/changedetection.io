@@ -51,6 +51,20 @@ def _handle_operations(op, uuids, datastore, worker_pool, update_q, queuedWatchM
                 datastore.set_last_viewed(uuid, int(time.time()))
         result_message = gettext("{} watches updated").format(len(uuids))
 
+    elif (op == 'mark-unviewed'):
+        marked_count = 0
+        skipped_count = 0
+        for uuid in uuids:
+            watch = datastore.data['watching'].get(uuid)
+            if not watch:
+                continue
+            if watch.history_n < 2:
+                skipped_count += 1
+                continue
+            datastore.set_last_viewed(uuid, int(watch.newest_history_key) - 1)
+            marked_count += 1
+        result_message = gettext("{} watches marked as unviewed ({} skipped)").format(marked_count, skipped_count)
+
     elif (op == 'mute'):
         for uuid in uuids:
             if datastore.data['watching'].get(uuid):
